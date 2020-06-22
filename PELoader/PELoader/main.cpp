@@ -2,11 +2,12 @@
 #include "stdio.h"
 
 
+
 int main()
 {
 
 	HANDLE hFile = CreateFileA(
-		"C:\\Users\\pip\\Desktop\\HollowProcessInjection3\\HollowProcessInjection3\\HelloWorld.exe",
+		"C:\\Users\\pip\\Desktop\\HollowProcessInjection3\\HollowProcessInjection3\\yo.exe",
 		GENERIC_READ,
 		NULL,
 		NULL,
@@ -43,13 +44,13 @@ int main()
 
     PIMAGE_NT_HEADERS pNTHeaderResource = (PIMAGE_NT_HEADERS)((DWORD)pDosHeader + (DWORD)pDosHeader->e_lfanew);
 
-    LPVOID lpVMem = VirtualAlloc(NULL, pNTHeaderResource->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    LPVOID lpVMem = VirtualAlloc(NULL, pNTHeaderResource->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
     PBYTE pHeader = new BYTE[pNTHeaderResource->OptionalHeader.SizeOfHeaders];
 
     memcpy(pHeader, pDosHeader, pNTHeaderResource->OptionalHeader.SizeOfHeaders);
 
-    if (!WriteProcessMemory(GetCurrentProcess(), lpVMem, pHeader, pNTHeaderResource->OptionalHeader.SizeOfHeaders, NULL))
+    if (!CopyMemory(lpVMem, pHeader, pNTHeaderResource->OptionalHeader.SizeOfHeaders))
     {
         printf("Failed: Unable to write headers: %i", GetLastError());
         return -1;
@@ -62,7 +63,7 @@ int main()
     {
         printf("Copying data from: %s\n", pSectionHeader->Name);
 
-		if (i == 4) {
+		if (i == 8) {
 			dwRelocAddr = pSectionHeader->PointerToRawData;
 		}
 
@@ -70,7 +71,7 @@ int main()
 
         memcpy(pSectionData, (PVOID)((DWORD)pDosHeader + (DWORD)pSectionHeader->PointerToRawData), (DWORD)pSectionHeader->SizeOfRawData);
 
-        if (!WriteProcessMemory(GetCurrentProcess(), (LPVOID)((DWORD)lpVMem + (DWORD)pSectionHeader->VirtualAddress), pSectionData, (DWORD)pSectionHeader->SizeOfRawData, NULL))
+        if (!CopyMemory((LPVOID)((DWORD)lpVMem + (DWORD)pSectionHeader->VirtualAddress), pSectionData, (DWORD)pSectionHeader->SizeOfRawData))
         {
             printf("Failed copying data from %s: %i", pSectionHeader->Name, GetLastError());
             return -1;
@@ -97,15 +98,12 @@ int main()
 	
 
 	PBASE_RELOCATION_BLOCK pBlockheader;
-	DWORD dwSize = GetFileSize(hFile, 0);
-	PBYTE pBuffer = new BYTE[dwSize];
-	DWORD dwBytesRead = 0;
-	ReadFile(hFile, pBuffer, dwSize, &dwBytesRead, 0);
+
 
 	DWORD dwEntryCount;
 	PBASE_RELOCATION_ENTRY pBlocks;
 	delta = (DWORD)lpVMem - (DWORD)pNTHeaderResource->OptionalHeader.ImageBase;
-
+	
 	while (dwOffset < relocData.Size)
 	{
 		pBlockheader = (PBASE_RELOCATION_BLOCK)&pbBuffer[dwRelocAddr + dwOffset];
@@ -141,6 +139,7 @@ int main()
 
 
 	}
+	
 	//Relcoation Test End
 
 	// Resolve IAT Begin
@@ -169,17 +168,149 @@ int main()
 			PIMAGE_IMPORT_BY_NAME pImage = (PIMAGE_IMPORT_BY_NAME)((DWORD)pDosHeader + (DWORD)pThunk->u1.Function);
 			HANDLE procAddr = GetProcAddress(dllHMod, pImage->Name);
 
-			printf("%s -> 0x%p -> 0x%p\n", pImage->Name, procAddr, pThunkFirst->u1.Function);
-			//LPDWORD thunkPtr = (LPDWORD)&pThunkFirst->u1.AddressOfData;
+			if (pThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+				printf("Ordinal");
+			
+			
+			DWORD oldPrivilege;
+			printf("%s -> 0x%p -> 0x%p\n", pImage->Name, pThunkFirst->u1.Function, procAddr);
 			pThunkFirst->u1.Function = (DWORD)procAddr;
 
-
+			printf("%s -> 0x%p -> 0x%p\n", pImage->Name, pThunkFirst->u1.Function, procAddr);
+			//VirtualProtect(thunkPtr, sizeof(LPDWORD), oldPrivilege, &oldPrivilege);
 			pThunk++;
+			pThunkFirst++;
 		}
 
 		pImpDecsriptor++;
 	}
 
 	// Resolve IAT End
+	typedef struct _UNICODE_STRING {
+		USHORT Length;
+		USHORT MaximumLength;
+		PWSTR  Buffer;
+	} UNICODE_STRING, * PUNICODE_STRING;
+
+
+	typedef struct _PEB_LDR_DATA {
+		BYTE       Reserved1[8];
+		PVOID      Reserved2[3];
+		LIST_ENTRY InMemoryOrderModuleList;
+	} PEB_LDR_DATA, * PPEB_LDR_DATA;
+
+
+	typedef struct _RTL_USER_PROCESS_PARAMETERS {
+		BYTE           Reserved1[16];
+		PVOID          Reserved2[10];
+		UNICODE_STRING ImagePathName;
+		UNICODE_STRING CommandLine;
+	} RTL_USER_PROCESS_PARAMETERS, * PRTL_USER_PROCESS_PARAMETERS;
+
+	typedef struct _PEB_FREE_BLOCK
+	{
+		_PEB_FREE_BLOCK* Next;
+		ULONG Size;
+	} PEB_FREE_BLOCK, * PPEB_FREE_BLOCK;
+
+
+	typedef struct _ACTIVATION_CONTEXT_DATA { void* dummy; } ACTIVATION_CONTEXT_DATA;
+	typedef struct _ASSEMBLY_STORAGE_MAP { void* dummy; } ASSEMBLY_STORAGE_MAP;
+	typedef struct _FLS_CALLBACK_INFO { void* dummy; } FLS_CALLBACK_INFO;
+
+
+	typedef void (*PPEBLOCKROUTINE)(
+		PVOID PebLock
+		);
+
+	typedef struct _PEB {
+		BYTE InheritedAddressSpace;
+		BYTE ReadImageFileExecOptions;
+		BYTE BeingDebugged;
+		BYTE SpareBool;
+		void* Mutant;
+		LPVOID lpImageBaseAddress;
+		_PEB_LDR_DATA* Ldr;
+		_RTL_USER_PROCESS_PARAMETERS* ProcessParameters;
+		void* SubSystemData;
+		void* ProcessHeap;
+		_RTL_CRITICAL_SECTION* FastPebLock;
+		void* FastPebLockRoutine;
+		void* FastPebUnlockRoutine;
+		DWORD EnvironmentUpdateCount;
+		void* KernelCallbackTable;
+		DWORD SystemReserved[1];
+		DWORD ExecuteOptions : 2; // bit offset: 34, len=2
+		DWORD SpareBits : 30; // bit offset: 34, len=30
+		_PEB_FREE_BLOCK* FreeList;
+		DWORD TlsExpansionCounter;
+		void* TlsBitmap;
+		DWORD TlsBitmapBits[2];
+		void* ReadOnlySharedMemoryBase;
+		void* ReadOnlySharedMemoryHeap;
+		void** ReadOnlyStaticServerData;
+		void* AnsiCodePageData;
+		void* OemCodePageData;
+		void* UnicodeCaseTableData;
+		DWORD NumberOfProcessors;
+		DWORD NtGlobalFlag;
+		_LARGE_INTEGER CriticalSectionTimeout;
+		DWORD HeapSegmentReserve;
+		DWORD HeapSegmentCommit;
+		DWORD HeapDeCommitTotalFreeThreshold;
+		DWORD HeapDeCommitFreeBlockThreshold;
+		DWORD NumberOfHeaps;
+		DWORD MaximumNumberOfHeaps;
+		void** ProcessHeaps;
+		void* GdiSharedHandleTable;
+		void* ProcessStarterHelper;
+		DWORD GdiDCAttributeList;
+		void* LoaderLock;
+		DWORD OSMajorVersion;
+		DWORD OSMinorVersion;
+		WORD OSBuildNumber;
+		WORD OSCSDVersion;
+		DWORD OSPlatformId;
+		DWORD ImageSubsystem;
+		DWORD ImageSubsystemMajorVersion;
+		DWORD ImageSubsystemMinorVersion;
+		DWORD ImageProcessAffinityMask;
+		DWORD GdiHandleBuffer[34];
+		void (*PostProcessInitRoutine)();
+		void* TlsExpansionBitmap;
+		DWORD TlsExpansionBitmapBits[32];
+		DWORD SessionId;
+		_ULARGE_INTEGER AppCompatFlags;
+		_ULARGE_INTEGER AppCompatFlagsUser;
+		void* pShimData;
+		void* AppCompatInfo;
+		_UNICODE_STRING CSDVersion;
+		void* ActivationContextData;
+		void* ProcessAssemblyStorageMap;
+		void* SystemDefaultActivationContextData;
+		void* SystemAssemblyStorageMap;
+		DWORD MinimumStackCommit;
+	} PEB, *PPEB;
+
+	PPEB	peb;
+	peb = (PPEB)__readfsdword(0x30);
+	peb->lpImageBaseAddress = (LPVOID) lpVMem;
+
+	printf("PEB Image Base Address: 0x%08x\n", peb->lpImageBaseAddress);
+
+	DWORD dwOld;
+	VirtualProtect((LPVOID)lpVMem, pNTHeaderResource->OptionalHeader.SizeOfImage, PAGE_EXECUTE_READWRITE, &dwOld);
+
+	DWORD dwEP = (DWORD)lpVMem + pNTHeaderResource->OptionalHeader.AddressOfEntryPoint;
+	printf("Executing Entry Point: 0x%08x", dwEP);
+
+	
+	__asm {
+		mov eax, dwEP
+		call eax
+		int 3
+	};
+	
+
     return 0;
 }
