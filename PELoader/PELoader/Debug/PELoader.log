@@ -1,0 +1,6 @@
+﻿  main.cpp
+C:\Users\pip\Dev\PELoader\PELoader\PELoader\main.cpp(131,11): warning C4477: 'printf' : format string '%p' requires an argument of type 'void *', but variadic argument 1 has type 'DWORD'
+C:\Users\pip\Dev\PELoader\PELoader\PELoader\main.cpp(131,11): warning C4477: 'printf' : format string '%p' requires an argument of type 'void *', but variadic argument 2 has type 'DWORD'
+C:\Users\pip\Dev\PELoader\PELoader\PELoader\main.cpp(169,11): warning C4477: 'printf' : format string '%p' requires an argument of type 'void *', but variadic argument 2 has type 'DWORD'
+C:\Users\pip\Dev\PELoader\PELoader\PELoader\main.cpp(150,8): warning C4101: 'origThunkPtr': unreferenced local variable
+  PELoader.vcxproj -> C:\Users\pip\Dev\PELoader\PELoader\Debug\PELoader.exe
