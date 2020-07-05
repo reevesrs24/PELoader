@@ -1,15 +1,19 @@
 #pragma once
 #include <windows.h>
 
-typedef struct BASE_RELOCATION_BLOCK {
-	DWORD PageAddress;
-	DWORD BlockSize;
-} BASE_RELOCATION_BLOCK, * PBASE_RELOCATION_BLOCK;
+/* Relocation Reference:  https://docs.microsoft.com/en-us/windows/win32/debug/pe-format#base-relocation-types */
 
-typedef struct BASE_RELOCATION_ENTRY {
-	USHORT Offset : 12;
-	USHORT Type : 4;
-} BASE_RELOCATION_ENTRY, * PBASE_RELOCATION_ENTRY;
+typedef struct BASE_RELOCATION_BLOCK {
+	DWORD PageRVA;   // The image base plus the page RVA is added to each offset to create the VA where the base relocation must be applied. 
+	DWORD BlockSize; // The total number of bytes in the base relocation block, including the Page RVA and Block Size fields and the Type/Offset fields that follow. 
+} BASE_RELOCATION_BLOCK, *PBASE_RELOCATION_BLOCK;
+
+typedef struct BASE_RELOCATION_FIXUP {
+	USHORT Offset : 12; /* Stored in the remaining 12 bits of the WORD, an offset from the starting address that was specified in the Page RVA field for 
+	                     the block. This offset specifies where the base relocation is to be applied. */
+	USHORT Type   : 4;  // Stored in the high 4 bits of the WORD, a value that indicates the type of base relocation to be applied. For more information
+	                  
+} BASE_RELOCATION_FIXUP, *PBASE_RELOCATION_FIXUP;
 
 typedef struct _UNICODE_STRING {
 	USHORT Length;
