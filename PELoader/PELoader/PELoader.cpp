@@ -64,7 +64,7 @@ bool PELoader::loadPE()
 
 	
 	copyPESections(lpImageBaseAddress, pDosHeader, pNTHeader);
-	setRelocations(lpImageBaseAddress, pbBuffer);
+	setRelocations(lpImageBaseAddress);
 	
 
 	// Resolve IAT Begin
@@ -88,12 +88,11 @@ bool PELoader::loadPE()
 
 		while (pThunk->u1.AddressOfData != NULL) {
 
-			PIMAGE_IMPORT_BY_NAME pImage = (PIMAGE_IMPORT_BY_NAME)((DWORD)pDosHeader + (DWORD)pThunk->u1.Function);
-			HANDLE procAddr = GetProcAddress(dllHMod, pImage->Name);
-
 			if (pThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)
 				printf("Ordinal");
 
+			PIMAGE_IMPORT_BY_NAME pImage = (PIMAGE_IMPORT_BY_NAME)((DWORD)pDosHeader + (DWORD)pThunk->u1.Function);
+			HANDLE procAddr = GetProcAddress(dllHMod, pImage->Name);
 
 			DWORD oldPrivilege;
 			//printf("%s -> 0x%p -> 0x%p\n", pImage->Name, pThunkFirst->u1.Function, procAddr);
@@ -168,10 +167,6 @@ bool PELoader::copyPESections(LPVOID lpImageBaseAddress, PIMAGE_DOS_HEADER pDosH
 	{
 		printf("Copying data from: %s\n", pSectionHeader->Name);
 
-		if (i == 8) {
-			dwRelocAddr = pSectionHeader->PointerToRawData;
-		}
-
 		if (!CopyMemory(
 			(LPVOID)((DWORD)lpImageBaseAddress + (DWORD)pSectionHeader->VirtualAddress), 
 			(PVOID)((DWORD)pDosHeader + (DWORD)pSectionHeader->PointerToRawData), 
@@ -195,45 +190,41 @@ bool PELoader::copyPESections(LPVOID lpImageBaseAddress, PIMAGE_DOS_HEADER pDosH
 
 }
 
-bool PELoader::setRelocations(LPVOID lpImageBaseAddress, PBYTE pbBuffer)
+bool PELoader::setRelocations(LPVOID lpImageBaseAddress)
 {
 
 	DWORD dwOldProtection;
-	DWORD imageBaseDifference = 0;
-	DWORD relocCount = 0;
+	DWORD dwRelocation;
 
 	// Get Pointer to the relocation data directory
 	PIMAGE_DATA_DIRECTORY pBaseReloc = (PIMAGE_DATA_DIRECTORY)&pNTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
 	
-	imageBaseDifference = (DWORD)lpImageBaseAddress - (DWORD)pNTHeader->OptionalHeader.ImageBase;
+	DWORD imageBaseDifference = (DWORD)lpImageBaseAddress - (DWORD)pNTHeader->OptionalHeader.ImageBase;
 
 	PIMAGE_BASE_RELOCATION pImageBaseRelocation = (PIMAGE_BASE_RELOCATION)((DWORD)lpImageBaseAddress + (DWORD)pBaseReloc->VirtualAddress);
 
-	PBASE_RELOCATION_BLOCK pRelocationBlock;
-	PBASE_RELOCATION_FIXUP pBaseRelocationFixup;
+	PBASE_RELOCATION_BLOCK pRelocationBlock = (PBASE_RELOCATION_BLOCK)pImageBaseRelocation;
 	
 	// Number of relocations needed per block
-	DWORD num = (pImageBaseRelocation->SizeOfBlock - sizeof(BASE_RELOCATION_BLOCK)) / sizeof(BASE_RELOCATION_FIXUP);
+	DWORD relocationCount = (pImageBaseRelocation->SizeOfBlock - sizeof(BASE_RELOCATION_BLOCK)) / sizeof(BASE_RELOCATION_FIXUP);
 
-	pBaseRelocationFixup = (PBASE_RELOCATION_FIXUP)((DWORD)pImageBaseRelocation + sizeof(PIMAGE_BASE_RELOCATION));
-	relocCount += pImageBaseRelocation->SizeOfBlock;
+	PBASE_RELOCATION_FIXUP pBaseRelocationFixup = (PBASE_RELOCATION_FIXUP)((DWORD)pRelocationBlock + sizeof(BASE_RELOCATION_BLOCK));
 
 	do {
 
 	
-		for (int i = 0; i < num; i++) {
+		for (int i = 0; i < relocationCount; i++) {
 			
-			if (pBaseRelocationFixup->Type == IMAGE_REL_BASED_HIGHLOW) {
+			if (pBaseRelocationFixup->Type == IMAGE_REL_BASED_HIGHLOW) 
+			{
 
-				DWORD dwBuffer = 0;
-				VirtualProtect((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pImageBaseRelocation->VirtualAddress + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwBuffer), PAGE_EXECUTE_READWRITE, &dwOldProtection);
-				CopyMemory(&dwBuffer, (PVOID)((DWORD)lpImageBaseAddress + (DWORD)pImageBaseRelocation->VirtualAddress + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwBuffer));
+				VirtualProtect((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwRelocation), PAGE_EXECUTE_READWRITE, &dwOldProtection);
+				CopyMemory(&dwRelocation, (PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwRelocation));
 
-				
-				printf("0x%p -> 0x%p\n", dwBuffer, dwBuffer + imageBaseDifference);
-				dwBuffer += imageBaseDifference;
-				CopyMemory((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pImageBaseRelocation->VirtualAddress + (DWORD)pBaseRelocationFixup->Offset), &dwBuffer, sizeof(dwBuffer));
-				VirtualProtect((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pImageBaseRelocation->VirtualAddress + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwBuffer), dwOldProtection, &dwOldProtection);
+				printf("0x%p -> 0x%p\n", dwRelocation, dwRelocation + imageBaseDifference);
+				dwRelocation += imageBaseDifference;
+				CopyMemory((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), &dwRelocation, sizeof(dwRelocation));
+				VirtualProtect((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwRelocation), dwOldProtection, &dwOldProtection);
 				
 			}
 			
@@ -241,15 +232,11 @@ bool PELoader::setRelocations(LPVOID lpImageBaseAddress, PBYTE pbBuffer)
 			
 		}
 
-		pImageBaseRelocation = (PIMAGE_BASE_RELOCATION)((DWORD)pImageBaseRelocation + (DWORD)pImageBaseRelocation->SizeOfBlock);
-		
-		num = (pImageBaseRelocation->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(BASE_RELOCATION_FIXUP);
-		pBaseRelocationFixup = (PBASE_RELOCATION_FIXUP)((DWORD)pImageBaseRelocation + sizeof(IMAGE_BASE_RELOCATION));
-		relocCount += pImageBaseRelocation->SizeOfBlock;
-		if (pImageBaseRelocation->SizeOfBlock == 0) break;
-		//relocCount += sizeof(BASE_RELOCATION_BLOCK);
+		pRelocationBlock = (PBASE_RELOCATION_BLOCK)((DWORD)pRelocationBlock + (DWORD)pRelocationBlock->BlockSize);
+		relocationCount = (pRelocationBlock->BlockSize - sizeof(BASE_RELOCATION_BLOCK)) / sizeof(BASE_RELOCATION_FIXUP);
+		pBaseRelocationFixup = (PBASE_RELOCATION_FIXUP)((DWORD)pRelocationBlock + sizeof(BASE_RELOCATION_BLOCK));
 
-	} while (relocCount <= pBaseReloc->Size);
+	} while (pRelocationBlock->BlockSize != NULL);
 
 
 	return true;
