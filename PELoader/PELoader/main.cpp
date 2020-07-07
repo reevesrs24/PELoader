@@ -7,8 +7,7 @@ int main()
 {
 	
 	PELoader p;
-	//p.loadFile("C:\\Users\\pip\\Desktop\\pestudio\\pestudio\\pestudio.exe");
-	p.loadFile("C:\\Users\\pip\\Dev\\PELoader\\PELoader\\PELoader\\yo.exe");
+	p.loadFile("C:\\Windows\\System32\\calc.exe");
 
 	p.loadPE();
 

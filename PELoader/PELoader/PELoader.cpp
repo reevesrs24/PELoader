@@ -66,8 +66,6 @@ bool PELoader::loadPE()
 	copyPESections(lpImageBaseAddress, pDosHeader, pNTHeader);
 	setRelocations(lpImageBaseAddress);
 	
-
-	// Resolve IAT Begin
 	pDosHeader = (PIMAGE_DOS_HEADER)lpImageBaseAddress;
 
 	pNTHeader = (PIMAGE_NT_HEADERS)((DWORD)pDosHeader + (DWORD)pDosHeader->e_lfanew);
@@ -75,8 +73,10 @@ bool PELoader::loadPE()
 	DWORD origThunkPtr;
 
 	PIMAGE_IMPORT_DESCRIPTOR pImpDecsriptor = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD)pDosHeader + (DWORD)pNTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
-
+	PIMAGE_EXPORT_DIRECTORY pExportDirectory = (PIMAGE_EXPORT_DIRECTORY)((DWORD)pDosHeader + (DWORD)pNTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+	
 	while (pImpDecsriptor->Name != NULL) {
+		DWORD oldPrivilege;
 
 		PIMAGE_THUNK_DATA pThunk = (PIMAGE_THUNK_DATA)((DWORD)pDosHeader + (DWORD)pImpDecsriptor->OriginalFirstThunk);
 		PIMAGE_THUNK_DATA pThunkFirst = (PIMAGE_THUNK_DATA)((DWORD)pDosHeader + (DWORD)pImpDecsriptor->FirstThunk);
@@ -84,23 +84,26 @@ bool PELoader::loadPE()
 
 		printf("%s\n", dllName);
 		HMODULE dllHMod = LoadLibraryA(dllName);
-
-
+		HANDLE procAddr = NULL;
+		
 		while (pThunk->u1.AddressOfData != NULL) {
 
-			if (pThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+			if (pThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG32) 
+			{
 				printf("Ordinal");
+				procAddr = GetProcAddress(dllHMod, MAKEINTRESOURCEA(pThunk->u1.Ordinal));
+			}
+			else 
+			{
+				PIMAGE_IMPORT_BY_NAME pImage = (PIMAGE_IMPORT_BY_NAME)((DWORD)pDosHeader + (DWORD)pThunk->u1.Function);
+				procAddr = GetProcAddress(dllHMod, pImage->Name);
+			}
 
-			PIMAGE_IMPORT_BY_NAME pImage = (PIMAGE_IMPORT_BY_NAME)((DWORD)pDosHeader + (DWORD)pThunk->u1.Function);
-			HANDLE procAddr = GetProcAddress(dllHMod, pImage->Name);
-
-			DWORD oldPrivilege;
-			//printf("%s -> 0x%p -> 0x%p\n", pImage->Name, pThunkFirst->u1.Function, procAddr);
+			
 			VirtualProtect(&pThunkFirst->u1.Function, sizeof(DWORD), PAGE_EXECUTE_READWRITE, &oldPrivilege);
 			pThunkFirst->u1.Function = (DWORD)procAddr;
 			VirtualProtect(&pThunkFirst->u1.Function, sizeof(DWORD), oldPrivilege, &oldPrivilege);
 
-			//printf("%s -> 0x%p -> 0x%p\n", pImage->Name, pThunkFirst->u1.Function, procAddr);
 			
 			pThunk++;
 			pThunkFirst++;
@@ -108,7 +111,6 @@ bool PELoader::loadPE()
 
 		pImpDecsriptor++;
 	}
-	// Resolve IAT End
 
 
 	PPEB peb;
@@ -236,7 +238,7 @@ bool PELoader::setRelocations(LPVOID lpImageBaseAddress)
 		relocationCount = (pRelocationBlock->BlockSize - sizeof(BASE_RELOCATION_BLOCK)) / sizeof(BASE_RELOCATION_FIXUP);
 		pBaseRelocationFixup = (PBASE_RELOCATION_FIXUP)((DWORD)pRelocationBlock + sizeof(BASE_RELOCATION_BLOCK));
 
-	} while (pRelocationBlock->BlockSize != NULL);
+	} while (pRelocationBlock->BlockSize);
 
 
 	return true;
