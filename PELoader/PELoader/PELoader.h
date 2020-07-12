@@ -17,8 +17,6 @@ class PELoader
 		HANDLE hFile;
 		PIMAGE_DOS_HEADER pDosHeader;
 		PIMAGE_NT_HEADERS pNTHeader; 
-		DWORD dwRelocAddr;
-
 
 };
 

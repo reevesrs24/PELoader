@@ -7,7 +7,6 @@ PELoader::PELoader()
 	hFile = NULL;
 	pDosHeader = NULL;
 	pNTHeader = NULL;
-	dwRelocAddr = NULL;
 }
 
 
@@ -70,12 +69,58 @@ bool PELoader::loadPE()
 
 	pNTHeader = (PIMAGE_NT_HEADERS)((DWORD)pDosHeader + (DWORD)pDosHeader->e_lfanew);
 
-	DWORD origThunkPtr;
+
+	/* Delayed Start */
+	
+	PIMAGE_DELAYLOAD_DESCRIPTOR pDelayLoadImportDirectory = (PIMAGE_DELAYLOAD_DESCRIPTOR)((DWORD)pDosHeader + (DWORD)pNTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
+	
+	while (pDelayLoadImportDirectory->DllNameRVA) {
+		DWORD oldPrivilege;
+
+		PIMAGE_THUNK_DATA pThunkDelayed = (PIMAGE_THUNK_DATA)((DWORD)pDosHeader + (DWORD)pDelayLoadImportDirectory->ImportAddressTableRVA);
+		PIMAGE_THUNK_DATA pThunkDelayedFirst = (PIMAGE_THUNK_DATA)((DWORD)pDosHeader + (DWORD)pDelayLoadImportDirectory->ImportNameTableRVA);
+		LPSTR dllDelayedName = (LPSTR)((DWORD)lpImageBaseAddress + (DWORD)pDelayLoadImportDirectory->DllNameRVA);
+
+
+		printf("%s\n", dllDelayedName);
+		HMODULE dllHModDelayed = LoadLibraryA(dllDelayedName);
+		if (dllHModDelayed == NULL) break;
+		HANDLE procAddr = NULL;
+
+		while (pThunkDelayed->u1.AddressOfData) {
+
+			
+
+			if (pThunkDelayedFirst->u1.Ordinal & IMAGE_ORDINAL_FLAG32)
+			{
+				printf("\tOrdinal: %x\n", (LPCSTR)(pThunkDelayedFirst->u1.Ordinal & 0xFFFF));
+				procAddr = GetProcAddress(dllHModDelayed, (LPCSTR)(pThunkDelayedFirst->u1.Ordinal & 0xFFFF));
+			}
+			else
+			{
+				PIMAGE_IMPORT_BY_NAME pImage = (PIMAGE_IMPORT_BY_NAME)((DWORD)pDosHeader + (DWORD)pThunkDelayedFirst->u1.Function);
+				printf("\t%s\n", pImage->Name);
+				procAddr = GetProcAddress(dllHModDelayed, pImage->Name);
+			}
+
+
+			VirtualProtect(&pThunkDelayed->u1.Function, sizeof(DWORD), PAGE_EXECUTE_READWRITE, &oldPrivilege);
+			pThunkDelayed->u1.Function = (DWORD)procAddr;
+			VirtualProtect(&pThunkDelayed->u1.Function, sizeof(DWORD), oldPrivilege, &oldPrivilege);
+
+			pThunkDelayed++;
+			pThunkDelayedFirst++;
+		}
+		
+		pDelayLoadImportDirectory++;
+	}
+	
+	/* Delayed End*/
 
 	PIMAGE_IMPORT_DESCRIPTOR pImpDecsriptor = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD)pDosHeader + (DWORD)pNTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
 	PIMAGE_EXPORT_DIRECTORY pExportDirectory = (PIMAGE_EXPORT_DIRECTORY)((DWORD)pDosHeader + (DWORD)pNTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
-	
-	while (pImpDecsriptor->Name != NULL) {
+
+	while (pImpDecsriptor->Name) {
 		DWORD oldPrivilege;
 
 		PIMAGE_THUNK_DATA pThunk = (PIMAGE_THUNK_DATA)((DWORD)pDosHeader + (DWORD)pImpDecsriptor->OriginalFirstThunk);
@@ -86,17 +131,19 @@ bool PELoader::loadPE()
 		HMODULE dllHMod = LoadLibraryA(dllName);
 		HANDLE procAddr = NULL;
 		
-		while (pThunk->u1.AddressOfData != NULL) {
+		while (pThunk->u1.AddressOfData) {
 
 			if (pThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG32) 
 			{
-				printf("Ordinal");
-				procAddr = GetProcAddress(dllHMod, MAKEINTRESOURCEA(pThunk->u1.Ordinal));
+				printf("\tOrdinal: %x\n", (LPCSTR)(pThunk->u1.Ordinal & 0xFFFF));
+				procAddr = GetProcAddress(dllHMod, (LPCSTR)(pThunk->u1.Ordinal & 0xFFFF));
+				printf("\t%x\n", procAddr);
 			}
 			else 
 			{
 				PIMAGE_IMPORT_BY_NAME pImage = (PIMAGE_IMPORT_BY_NAME)((DWORD)pDosHeader + (DWORD)pThunk->u1.Function);
 				procAddr = GetProcAddress(dllHMod, pImage->Name);
+				printf("\t%s\n", pImage->Name);
 			}
 
 			
@@ -104,7 +151,6 @@ bool PELoader::loadPE()
 			pThunkFirst->u1.Function = (DWORD)procAddr;
 			VirtualProtect(&pThunkFirst->u1.Function, sizeof(DWORD), oldPrivilege, &oldPrivilege);
 
-			
 			pThunk++;
 			pThunkFirst++;
 		}
@@ -120,15 +166,15 @@ bool PELoader::loadPE()
 	printf("PEB Image Base Address: 0x%08x\n", peb->lpImageBaseAddress);
 
 
-	DWORD dwEP = (DWORD)lpImageBaseAddress + pNTHeader->OptionalHeader.AddressOfEntryPoint;
-	printf("Executing Entry Point: 0x%08x", dwEP);
+	DWORD dwImageBaseAddress = (DWORD)lpImageBaseAddress + pNTHeader->OptionalHeader.AddressOfEntryPoint;
+	printf("Executing Entry Point: 0x%08x", dwImageBaseAddress);
 
 
 	__asm {
-		push dwEP
+		push dwImageBaseAddress
 		ret
 	};
-
+	
 }
 
 
@@ -183,9 +229,9 @@ bool PELoader::copyPESections(LPVOID lpImageBaseAddress, PIMAGE_DOS_HEADER pDosH
 		VirtualProtect(
 			(LPVOID)((DWORD)lpImageBaseAddress + (DWORD)pSectionHeader->VirtualAddress), 
 			(DWORD)pSectionHeader->SizeOfRawData, 
-			sectionMemoryProtection[(pSectionHeader->Characteristics >> 28)], 
+			sectionMemoryProtection[ (pSectionHeader->Characteristics >> 28) ], 
 			&dwOldProtection
-		);
+		 );
 
 		pSectionHeader++;
 	}
@@ -224,12 +270,13 @@ bool PELoader::setRelocations(LPVOID lpImageBaseAddress)
 				CopyMemory(&dwRelocation, (PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwRelocation));
 
 				printf("0x%p -> 0x%p\n", dwRelocation, dwRelocation + imageBaseDifference);
+
 				dwRelocation += imageBaseDifference;
 				CopyMemory((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), &dwRelocation, sizeof(dwRelocation));
 				VirtualProtect((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwRelocation), dwOldProtection, &dwOldProtection);
 				
 			}
-			
+
 			pBaseRelocationFixup += 1;
 			
 		}
