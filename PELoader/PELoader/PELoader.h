@@ -10,8 +10,10 @@ class PELoader
 		PELoader();
 		bool loadFile(LPCSTR fileName);
 		bool loadPE();
-		bool copyPESections(LPVOID lpImageBaseAddress, PIMAGE_DOS_HEADER pDosHeader, PIMAGE_NT_HEADERS pNTHeader);
-		bool setRelocations(LPVOID lpImageBaseAddress);
+		bool copyPESections(LPVOID lpImageBaseAddress);
+		bool processReloc(LPVOID lpImageBaseAddress);
+		bool processIdata(LPVOID lpImageBaseAddress);
+		bool processDidata(LPVOID lpImageBaseAddress);
 
     private:
 		HANDLE hFile;
