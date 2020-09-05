@@ -7,9 +7,7 @@ int main()
 {
 	
 	PELoader p;
-
-	p.loadFile("C:\\Windows\\SysWOW64\\explorer.exe");
-	p.loadPE();
+	p.loadPEFromDisk("C:\\Windows\\SysWOW64\\write.exe");
 
     return 0;
 }

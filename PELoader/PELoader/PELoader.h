@@ -1,24 +1,27 @@
 #ifndef PELOADER_H
 #define PELOADER_H
 
+#include <stdio.h>
+#include <unordered_map>
 #include "PEHelper.h"
+
 
 class PELoader
 {
 
-	public:
-		PELoader();
-		bool loadFile(LPCSTR fileName);
-		bool loadPE();
-		bool copyPESections(LPVOID lpImageBaseAddress);
-		bool processReloc(LPVOID lpImageBaseAddress);
-		bool processIdata(LPVOID lpImageBaseAddress);
-		bool processDidata(LPVOID lpImageBaseAddress);
+public:
+	PELoader();
+	bool loadPEFromDisk(LPCSTR fileName);
+	bool loadPEFromMemory(PBYTE pbBuffer);
+	bool copyPESections(LPVOID lpImageBaseAddress);
+	bool processReloc(LPVOID lpImageBaseAddress);
+	bool processIData(LPVOID lpImageBaseAddress);
+	bool processDIData(LPVOID lpImageBaseAddress);
 
-    private:
-		HANDLE hFile;
-		PIMAGE_DOS_HEADER pDosHeader;
-		PIMAGE_NT_HEADERS pNTHeader; 
+private:
+	HANDLE hFile;
+	PIMAGE_DOS_HEADER pDosHeader;
+	PIMAGE_NT_HEADERS pNTHeader;
 
 };
 

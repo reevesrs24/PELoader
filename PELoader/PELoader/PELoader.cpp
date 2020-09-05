@@ -1,6 +1,5 @@
 #include "PELoader.h"
-#include <stdio.h>
-#include <unordered_map>
+
 
 PELoader::PELoader()
 {
@@ -10,7 +9,8 @@ PELoader::PELoader()
 }
 
 
-bool PELoader::loadFile(LPCSTR fileName)
+
+bool PELoader::loadPEFromDisk(LPCSTR fileName)
 {
 
 	hFile = CreateFileA(
@@ -29,13 +29,6 @@ bool PELoader::loadFile(LPCSTR fileName)
 		return false;
 	}
 
-	return true;
-
-}
-
-
-bool PELoader::loadPE()
-{
 	DWORD dwFileSize = GetFileSize(hFile, NULL);
 
 	PBYTE pbBuffer = new BYTE[dwFileSize];
@@ -61,16 +54,11 @@ bool PELoader::loadPE()
 
 	LPVOID lpImageBaseAddress = VirtualAlloc(NULL, pNTHeader->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 
-	
+
 	copyPESections(lpImageBaseAddress);
 	processReloc(lpImageBaseAddress);
-	processIdata(lpImageBaseAddress);
-	processDidata(lpImageBaseAddress);
-	
-
-	//pDosHeader = (PIMAGE_DOS_HEADER)lpImageBaseAddress;
-
-	//pNTHeader = (PIMAGE_NT_HEADERS)((DWORD)pDosHeader + (DWORD)pDosHeader->e_lfanew);
+	processIData(lpImageBaseAddress);
+	processDIData(lpImageBaseAddress);
 
 
 	PPEB peb;
@@ -88,13 +76,53 @@ bool PELoader::loadPE()
 		push dwImageBaseAddress
 		ret
 	};
-	
+
+}
+
+bool PELoader::loadPEFromMemory(PBYTE pbBuffer)
+{
+
+	pDosHeader = (PIMAGE_DOS_HEADER)pbBuffer;
+
+	if (pDosHeader->e_magic != IMAGE_DOS_SIGNATURE)
+	{
+		printf("Failed: .exe does not have a valid DOS signature %i", GetLastError());
+		return false;
+	}
+
+	pNTHeader = (PIMAGE_NT_HEADERS)((DWORD)pDosHeader + (DWORD)pDosHeader->e_lfanew);
+
+	LPVOID lpImageBaseAddress = VirtualAlloc(NULL, pNTHeader->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+
+	copyPESections(lpImageBaseAddress);
+	processReloc(lpImageBaseAddress);
+	processIData(lpImageBaseAddress);
+	processDIData(lpImageBaseAddress);
+
+
+	PPEB peb;
+	peb = (PPEB)__readfsdword(0x30);
+	peb->lpImageBaseAddress = (LPVOID)lpImageBaseAddress;
+
+	printf("PEB Image Base Address: 0x%08x\n", peb->lpImageBaseAddress);
+
+
+	DWORD dwImageBaseAddress = (DWORD)lpImageBaseAddress + pNTHeader->OptionalHeader.AddressOfEntryPoint;
+	printf("Executing Entry Point: 0x%08x", dwImageBaseAddress);
+
+
+	__asm {
+		push dwImageBaseAddress
+		ret
+	};
+
 }
 
 
 bool PELoader::copyPESections(LPVOID lpImageBaseAddress)
 {
-	
+
 	DWORD dwOldProtection;
 
 	std::unordered_map<int, int> sectionMemoryProtection;
@@ -103,13 +131,13 @@ bool PELoader::copyPESections(LPVOID lpImageBaseAddress)
 	sectionMemoryProtection.insert(std::make_pair(0x6, PAGE_EXECUTE_READ));
 	sectionMemoryProtection.insert(std::make_pair(0xC, PAGE_READWRITE));
 	sectionMemoryProtection.insert(std::make_pair(0xE, PAGE_EXECUTE_READWRITE));
-	
-	
+
+
 	if (!CopyMemory(
-		lpImageBaseAddress, 
-		pDosHeader, 
+		lpImageBaseAddress,
+		pDosHeader,
 		pNTHeader->OptionalHeader.SizeOfHeaders)
-	)
+		)
 	{
 		printf("Failed: Unable to write headers: %i", GetLastError());
 		return false;
@@ -117,9 +145,9 @@ bool PELoader::copyPESections(LPVOID lpImageBaseAddress)
 
 	// Set Header memory protection to PAGE_READONLY
 	VirtualProtect(
-		(LPVOID)lpImageBaseAddress, 
-		pNTHeader->OptionalHeader.SizeOfHeaders, 
-		PAGE_READONLY, 
+		(LPVOID)lpImageBaseAddress,
+		pNTHeader->OptionalHeader.SizeOfHeaders,
+		PAGE_READONLY,
 		&dwOldProtection
 	);
 
@@ -130,10 +158,10 @@ bool PELoader::copyPESections(LPVOID lpImageBaseAddress)
 		printf("Copying data from: %s\n", pSectionHeader->Name);
 
 		if (!CopyMemory(
-			(LPVOID)((DWORD)lpImageBaseAddress + (DWORD)pSectionHeader->VirtualAddress), 
-			(PVOID)((DWORD)pDosHeader + (DWORD)pSectionHeader->PointerToRawData), 
+			(LPVOID)((DWORD)lpImageBaseAddress + (DWORD)pSectionHeader->VirtualAddress),
+			(PVOID)((DWORD)pDosHeader + (DWORD)pSectionHeader->PointerToRawData),
 			(DWORD)pSectionHeader->SizeOfRawData)
-		)
+			)
 		{
 			printf("Failed copying data from %s: %i", pSectionHeader->Name, GetLastError());
 			return false;
@@ -141,11 +169,11 @@ bool PELoader::copyPESections(LPVOID lpImageBaseAddress)
 
 		// Set the section correct memory protection
 		VirtualProtect(
-			(LPVOID)((DWORD)lpImageBaseAddress + (DWORD)pSectionHeader->VirtualAddress), 
-			(DWORD)pSectionHeader->SizeOfRawData, 
-			sectionMemoryProtection[ (pSectionHeader->Characteristics >> 28) ], 
+			(LPVOID)((DWORD)lpImageBaseAddress + (DWORD)pSectionHeader->VirtualAddress),
+			(DWORD)pSectionHeader->SizeOfRawData,
+			sectionMemoryProtection[(pSectionHeader->Characteristics >> 28)],
 			&dwOldProtection
-		 );
+		);
 
 		pSectionHeader++;
 	}
@@ -160,13 +188,13 @@ bool PELoader::processReloc(LPVOID lpImageBaseAddress)
 
 	// Get Pointer to the relocation data directory
 	PIMAGE_DATA_DIRECTORY pBaseReloc = (PIMAGE_DATA_DIRECTORY)&pNTHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
-	
+
 	DWORD imageBaseDifference = (DWORD)lpImageBaseAddress - (DWORD)pNTHeader->OptionalHeader.ImageBase;
 
 	PIMAGE_BASE_RELOCATION pImageBaseRelocation = (PIMAGE_BASE_RELOCATION)((DWORD)lpImageBaseAddress + (DWORD)pBaseReloc->VirtualAddress);
 
 	PBASE_RELOCATION_BLOCK pRelocationBlock = (PBASE_RELOCATION_BLOCK)pImageBaseRelocation;
-	
+
 	// Number of relocations needed per block
 	DWORD relocationCount = (pImageBaseRelocation->SizeOfBlock - sizeof(BASE_RELOCATION_BLOCK)) / sizeof(BASE_RELOCATION_FIXUP);
 
@@ -174,10 +202,10 @@ bool PELoader::processReloc(LPVOID lpImageBaseAddress)
 
 	do {
 
-	
+
 		for (int i = 0; i < relocationCount; i++) {
-			
-			if (pBaseRelocationFixup->Type == IMAGE_REL_BASED_HIGHLOW) 
+
+			if (pBaseRelocationFixup->Type == IMAGE_REL_BASED_HIGHLOW)
 			{
 
 				VirtualProtect((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwRelocation), PAGE_EXECUTE_READWRITE, &dwOldProtection);
@@ -188,11 +216,12 @@ bool PELoader::processReloc(LPVOID lpImageBaseAddress)
 
 				CopyMemory((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), &dwRelocation, sizeof(dwRelocation));
 				VirtualProtect((PVOID)((DWORD)lpImageBaseAddress + (DWORD)pRelocationBlock->PageRVA + (DWORD)pBaseRelocationFixup->Offset), sizeof(dwRelocation), dwOldProtection, &dwOldProtection);
-				
+
 			}
 
+
 			pBaseRelocationFixup += 1;
-			
+
 		}
 
 		pRelocationBlock = (PBASE_RELOCATION_BLOCK)((DWORD)pRelocationBlock + (DWORD)pRelocationBlock->BlockSize);
@@ -205,7 +234,7 @@ bool PELoader::processReloc(LPVOID lpImageBaseAddress)
 	return true;
 }
 
-bool PELoader::processIdata(LPVOID lpImageBaseAddress)
+bool PELoader::processIData(LPVOID lpImageBaseAddress)
 {
 	pDosHeader = (PIMAGE_DOS_HEADER)lpImageBaseAddress;
 	pNTHeader = (PIMAGE_NT_HEADERS)((DWORD)pDosHeader + (DWORD)pDosHeader->e_lfanew);
@@ -246,14 +275,14 @@ bool PELoader::processIdata(LPVOID lpImageBaseAddress)
 			pThunk++;
 			pThunkFirst++;
 		}
-		
+
 		pImpDecsriptor++;
 	}
 
 	return true;
 }
 
-bool PELoader::processDidata(LPVOID lpImageBaseAddress)
+bool PELoader::processDIData(LPVOID lpImageBaseAddress)
 {
 
 
@@ -303,3 +332,6 @@ bool PELoader::processDidata(LPVOID lpImageBaseAddress)
 	return true;
 
 }
+
+
+
