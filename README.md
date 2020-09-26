@@ -1,2 +1,2 @@
 # PELoader
-Windows PE Loader PoC
+Basic 32-bit Windows PE Loader PoC
