@@ -46,8 +46,6 @@ typedef struct _PEB_FREE_BLOCK
 } PEB_FREE_BLOCK, *PPEB_FREE_BLOCK;
 
 
-
-
 typedef struct _PEB {
 	BYTE InheritedAddressSpace;
 	BYTE ReadImageFileExecOptions;

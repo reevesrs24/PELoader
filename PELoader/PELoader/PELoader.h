@@ -1,7 +1,6 @@
 #ifndef PELOADER_H
 #define PELOADER_H
 
-#include <unordered_map>
 #include "PEHelper.h"
 
 
@@ -16,6 +15,7 @@ public:
 	bool processReloc(LPVOID lpImageBaseAddress);
 	bool processIData(LPVOID lpImageBaseAddress);
 	bool processDIData(LPVOID lpImageBaseAddress);
+	void executeLoadedPE(LPVOID lpImageBaseAddress);
 
 private:
 	HANDLE hFile;

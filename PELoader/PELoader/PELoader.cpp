@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include "PELoader.h"
 
 
@@ -59,20 +60,7 @@ bool PELoader::loadPEFromDisk(LPCSTR fileName)
 	processReloc(lpImageBaseAddress);
 	processIData(lpImageBaseAddress);
 	processDIData(lpImageBaseAddress);
-
-
-	PPEB peb;
-	peb = (PPEB)__readfsdword(0x30);
-	peb->lpImageBaseAddress = (LPVOID)lpImageBaseAddress;
-
-	printf("PEB Image Base Address: 0x%08x\n", peb->lpImageBaseAddress);
-
-
-	DWORD dwImageBaseAddress = (DWORD)lpImageBaseAddress + pNTHeader->OptionalHeader.AddressOfEntryPoint;
-	printf("Executing Entry Point: 0x%08x", dwImageBaseAddress);
-
-
-	(*(void(*)())dwImageBaseAddress)();
+	executeLoadedPE(lpImageBaseAddress);
 
 }
 
@@ -96,20 +84,7 @@ bool PELoader::loadPEFromMemory(PBYTE pbBuffer)
 	processReloc(lpImageBaseAddress);
 	processIData(lpImageBaseAddress);
 	processDIData(lpImageBaseAddress);
-
-
-	PPEB peb;
-	peb = (PPEB)__readfsdword(0x30);
-	peb->lpImageBaseAddress = (LPVOID)lpImageBaseAddress;
-
-	printf("PEB Image Base Address: 0x%08x\n", peb->lpImageBaseAddress);
-
-
-	DWORD dwImageBaseAddress = (DWORD)lpImageBaseAddress + pNTHeader->OptionalHeader.AddressOfEntryPoint;
-	printf("Executing Entry Point: 0x%08x", dwImageBaseAddress);
-
-
-	(*(void(*)())dwImageBaseAddress)();
+	executeLoadedPE(lpImageBaseAddress);
 
 }
 
@@ -325,3 +300,11 @@ bool PELoader::processDIData(LPVOID lpImageBaseAddress)
 
 
 
+void PELoader::executeLoadedPE(LPVOID lpImageBaseAddress) 
+{
+
+	DWORD dwImageBaseAddress = (DWORD)lpImageBaseAddress + pNTHeader->OptionalHeader.AddressOfEntryPoint;
+
+	(*(void(*)())dwImageBaseAddress)();
+
+}
