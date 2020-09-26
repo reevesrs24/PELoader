@@ -1,6 +1,4 @@
-﻿
-#include "stdio.h"
-#include "PELoader.h"
+﻿#include "PELoader.h"
 
 
 int main()

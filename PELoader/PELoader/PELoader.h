@@ -1,7 +1,6 @@
 #ifndef PELOADER_H
 #define PELOADER_H
 
-#include <stdio.h>
 #include <unordered_map>
 #include "PEHelper.h"
 

@@ -2,6 +2,7 @@
 #include <windows.h>
 
 /* Relocation Reference:  https://docs.microsoft.com/en-us/windows/win32/debug/pe-format#base-relocation-types */
+/* Relocation Reference: https://research32.blogspot.com/2015/01/base-relocation-table.html */
 
 typedef struct BASE_RELOCATION_BLOCK {
 	DWORD PageRVA;   // The image base plus the page RVA is added to each offset to create the VA where the base relocation must be applied. 
@@ -15,18 +16,19 @@ typedef struct BASE_RELOCATION_FIXUP {
 	                  
 } BASE_RELOCATION_FIXUP, *PBASE_RELOCATION_FIXUP;
 
+
 typedef struct _UNICODE_STRING {
 	USHORT Length;
 	USHORT MaximumLength;
 	PWSTR  Buffer;
-} UNICODE_STRING, * PUNICODE_STRING;
+} UNICODE_STRING, *PUNICODE_STRING;
 
 
 typedef struct _PEB_LDR_DATA {
 	BYTE       Reserved1[8];
 	PVOID      Reserved2[3];
 	LIST_ENTRY InMemoryOrderModuleList;
-} PEB_LDR_DATA, * PPEB_LDR_DATA;
+} PEB_LDR_DATA, *PPEB_LDR_DATA;
 
 
 typedef struct _RTL_USER_PROCESS_PARAMETERS {
@@ -34,23 +36,17 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS {
 	PVOID          Reserved2[10];
 	UNICODE_STRING ImagePathName;
 	UNICODE_STRING CommandLine;
-} RTL_USER_PROCESS_PARAMETERS, * PRTL_USER_PROCESS_PARAMETERS;
+} RTL_USER_PROCESS_PARAMETERS, *PRTL_USER_PROCESS_PARAMETERS;
+
 
 typedef struct _PEB_FREE_BLOCK
 {
 	_PEB_FREE_BLOCK* Next;
 	ULONG Size;
-} PEB_FREE_BLOCK, * PPEB_FREE_BLOCK;
+} PEB_FREE_BLOCK, *PPEB_FREE_BLOCK;
 
 
-typedef struct _ACTIVATION_CONTEXT_DATA { void* dummy; } ACTIVATION_CONTEXT_DATA;
-typedef struct _ASSEMBLY_STORAGE_MAP { void* dummy; } ASSEMBLY_STORAGE_MAP;
-typedef struct _FLS_CALLBACK_INFO { void* dummy; } FLS_CALLBACK_INFO;
 
-
-typedef void (*PPEBLOCKROUTINE)(
-	PVOID PebLock
-	);
 
 typedef struct _PEB {
 	BYTE InheritedAddressSpace;
